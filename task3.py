@@ -2,46 +2,31 @@ import streamlit as st
 import pandas as pd
 import re
 import os
-
-# ----------------------------------------
-# SAFE joblib import (NO CRASH)
-# ----------------------------------------
-try:
-    import joblib
-except ModuleNotFoundError:
-    st.error("❌ joblib is not installed. Please check requirements.txt")
-    st.stop()
-
+import pickle
 from sklearn.metrics import classification_report, accuracy_score
 
 # ----------------------------------------
-# PAGE CONFIG (MUST BE FIRST Streamlit cmd)
+# PAGE CONFIG
 # ----------------------------------------
 st.set_page_config(page_title="BotTrainer NLU", layout="centered")
 
 # ----------------------------------------
-# FILE PATHS (RELATIVE – STREAMLIT SAFE)
+# FILE PATHS (RELATIVE)
 # ----------------------------------------
 DATASET_PATH = "Bitext_Sample_Customer_Service_Training_Dataset.xlsx"
 MODEL_PATH = "nlu_intent_model.pkl"
 VECTORIZER_PATH = "tfidf_vectorizer.pkl"
 
 # ----------------------------------------
-# FILE EXISTENCE CHECK
+# CHECK FILES
 # ----------------------------------------
-missing_files = []
 for file in [DATASET_PATH, MODEL_PATH, VECTORIZER_PATH]:
     if not os.path.exists(file):
-        missing_files.append(file)
-
-if missing_files:
-    st.error("❌ Missing required files:")
-    for f in missing_files:
-        st.write(f"- {f}")
-    st.stop()
+        st.error(f"❌ Missing file: {file}")
+        st.stop()
 
 # ----------------------------------------
-# LOAD DATASET
+# LOAD DATA
 # ----------------------------------------
 df = pd.read_excel(DATASET_PATH)
 df = df[['utterance', 'intent']]
@@ -55,10 +40,13 @@ def clean_text(text):
 df['clean_utterance'] = df['utterance'].apply(clean_text)
 
 # ----------------------------------------
-# LOAD MODEL & VECTORIZER
+# LOAD MODEL & VECTORIZER (pickle)
 # ----------------------------------------
-model = joblib.load(MODEL_PATH)
-vectorizer = joblib.load(VECTORIZER_PATH)
+with open(MODEL_PATH, "rb") as f:
+    model = pickle.load(f)
+
+with open(VECTORIZER_PATH, "rb") as f:
+    vectorizer = pickle.load(f)
 
 # ----------------------------------------
 # UI
@@ -67,7 +55,7 @@ st.title("🤖 BotTrainer – NLU Model Trainer & Evaluator")
 st.write("Predict chatbot intents and evaluate model performance.")
 
 # ----------------------------------------
-# INTENT PREDICTION (TASK 5–6)
+# PREDICTION
 # ----------------------------------------
 st.subheader("🔹 Intent Prediction")
 
@@ -80,34 +68,31 @@ if st.button("Predict Intent"):
     if user_input.strip() == "":
         st.warning("Please enter a message.")
     else:
-        cleaned_input = clean_text(user_input)
-        input_vector = vectorizer.transform([cleaned_input])
-        prediction = model.predict(input_vector)
-        st.success(f"✅ Predicted Intent: **{prediction[0]}**")
+        cleaned = clean_text(user_input)
+        vec = vectorizer.transform([cleaned])
+        pred = model.predict(vec)
+        st.success(f"✅ Predicted Intent: **{pred[0]}**")
 
 # ----------------------------------------
-# MODEL EVALUATION (TASK 7–8)
+# EVALUATION
 # ----------------------------------------
-st.subheader("🔹 Model Evaluation on Full Dataset")
+st.subheader("🔹 Model Evaluation")
 
 if st.button("Run Evaluation"):
-    X = df['clean_utterance']
-    y = df['intent']
-
-    X_vec = vectorizer.transform(X)
+    X_vec = vectorizer.transform(df['clean_utterance'])
     y_pred = model.predict(X_vec)
 
-    accuracy = accuracy_score(y, y_pred)
-    report = classification_report(y, y_pred)
+    acc = accuracy_score(df['intent'], y_pred)
+    report = classification_report(df['intent'], y_pred)
 
-    st.write(f"### 📊 Accuracy: `{accuracy:.4f}`")
-    st.text("Classification Report:")
+    st.write(f"### 📊 Accuracy: `{acc:.4f}`")
     st.text(report)
 
     with open("final_bottrainer_report.txt", "w") as f:
         f.write("BotTrainer – NLU Model Evaluation Report\n\n")
-        f.write(f"Accuracy: {accuracy:.4f}\n\n")
+        f.write(f"Accuracy: {acc:.4f}\n\n")
         f.write(report)
 
-    st.success("📄 Final evaluation report generated successfully!")
+    st.success("📄 Report generated successfully!")
+
 
