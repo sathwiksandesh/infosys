@@ -1,36 +1,21 @@
 import streamlit as st
 import pandas as pd
 import re
-import os
-import pickle
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, accuracy_score
 
 # ----------------------------------------
-# PAGE CONFIG (FIRST STREAMLIT CALL)
+# PAGE CONFIG
 # ----------------------------------------
 st.set_page_config(page_title="BotTrainer NLU", layout="centered")
 
 # ----------------------------------------
-# FILE PATHS (RELATIVE ONLY)
-# ----------------------------------------
-DATASET_PATH = "Bitext_Sample_Customer_Service_Training_Dataset.xlsx"
-MODEL_PATH = "nlu_intent_model.pkl"
-VECTORIZER_PATH = "tfidf_vectorizer.pkl"
-
-# ----------------------------------------
-# CHECK FILES
-# ----------------------------------------
-for file in [DATASET_PATH, MODEL_PATH, VECTORIZER_PATH]:
-    if not os.path.exists(file):
-        st.error(f"❌ Required file missing: `{file}`")
-        st.stop()
-
-# ----------------------------------------
-# LOAD DATA (SAFE)
+# LOAD DATA (CACHED)
 # ----------------------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_excel(DATASET_PATH)
+    df = pd.read_excel("Bitext_Sample_Customer_Service_Training_Dataset.xlsx")
     df = df[['utterance', 'intent']]
     return df
 
@@ -45,23 +30,32 @@ def clean_text(text):
 df['clean_utterance'] = df['utterance'].apply(clean_text)
 
 # ----------------------------------------
-# LOAD MODEL (SAFE)
+# TRAIN MODEL INSIDE STREAMLIT (CACHED)
 # ----------------------------------------
 @st.cache_resource
-def load_model():
-    with open(MODEL_PATH, "rb") as f:
-        model = pickle.load(f)
-    with open(VECTORIZER_PATH, "rb") as f:
-        vectorizer = pickle.load(f)
+def train_model(texts, labels):
+    vectorizer = TfidfVectorizer(
+        ngram_range=(1, 2),
+        max_features=5000,
+        stop_words="english"
+    )
+    X = vectorizer.fit_transform(texts)
+
+    model = LogisticRegression(max_iter=1000)
+    model.fit(X, labels)
+
     return model, vectorizer
 
-model, vectorizer = load_model()
+model, vectorizer = train_model(
+    df['clean_utterance'],
+    df['intent']
+)
 
 # ----------------------------------------
 # UI
 # ----------------------------------------
 st.title("🤖 BotTrainer – NLU Model Trainer & Evaluator")
-st.write("Predict chatbot intents and evaluate model performance.")
+st.write("NLU intent prediction and evaluation (cloud-safe).")
 
 # ----------------------------------------
 # INTENT PREDICTION
@@ -97,12 +91,8 @@ if st.button("Run Evaluation"):
     st.write(f"### 📊 Accuracy: `{acc:.4f}`")
     st.text(report)
 
-    with open("final_bottrainer_report.txt", "w") as f:
-        f.write("BotTrainer – NLU Model Evaluation Report\n\n")
-        f.write(f"Accuracy: {acc:.4f}\n\n")
-        f.write(report)
+    st.success("📄 Evaluation completed successfully!")
 
-    st.success("📄 Final evaluation report generated successfully!")
 
 
 
