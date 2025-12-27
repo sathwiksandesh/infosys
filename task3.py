@@ -1,16 +1,40 @@
+import streamlit as st
 import pandas as pd
 import re
+import os
 import pickle
-from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, accuracy_score
 
-# -------------------------------
-# LOAD DATASET
-# -------------------------------
+# ----------------------------------------
+# PAGE CONFIG (FIRST STREAMLIT CALL)
+# ----------------------------------------
+st.set_page_config(page_title="BotTrainer NLU", layout="centered")
+
+# ----------------------------------------
+# FILE PATHS (RELATIVE ONLY)
+# ----------------------------------------
 DATASET_PATH = "Bitext_Sample_Customer_Service_Training_Dataset.xlsx"
-df = pd.read_excel(DATASET_PATH)
-df = df[['utterance', 'intent']]
+MODEL_PATH = "nlu_intent_model.pkl"
+VECTORIZER_PATH = "tfidf_vectorizer.pkl"
+
+# ----------------------------------------
+# CHECK FILES
+# ----------------------------------------
+for file in [DATASET_PATH, MODEL_PATH, VECTORIZER_PATH]:
+    if not os.path.exists(file):
+        st.error(f"❌ Required file missing: `{file}`")
+        st.stop()
+
+# ----------------------------------------
+# LOAD DATA (SAFE)
+# ----------------------------------------
+@st.cache_data
+def load_data():
+    df = pd.read_excel(DATASET_PATH)
+    df = df[['utterance', 'intent']]
+    return df
+
+df = load_data()
 
 def clean_text(text):
     text = str(text).lower()
@@ -20,33 +44,66 @@ def clean_text(text):
 
 df['clean_utterance'] = df['utterance'].apply(clean_text)
 
-X = df['clean_utterance']
-y = df['intent']
+# ----------------------------------------
+# LOAD MODEL (SAFE)
+# ----------------------------------------
+@st.cache_resource
+def load_model():
+    with open(MODEL_PATH, "rb") as f:
+        model = pickle.load(f)
+    with open(VECTORIZER_PATH, "rb") as f:
+        vectorizer = pickle.load(f)
+    return model, vectorizer
 
-# -------------------------------
-# TRAIN MODEL
-# -------------------------------
-vectorizer = TfidfVectorizer(
-    ngram_range=(1, 2),
-    max_features=5000,
-    stop_words="english"
+model, vectorizer = load_model()
+
+# ----------------------------------------
+# UI
+# ----------------------------------------
+st.title("🤖 BotTrainer – NLU Model Trainer & Evaluator")
+st.write("Predict chatbot intents and evaluate model performance.")
+
+# ----------------------------------------
+# INTENT PREDICTION
+# ----------------------------------------
+st.subheader("🔹 Intent Prediction")
+
+user_input = st.text_area(
+    "Enter a customer message:",
+    placeholder="e.g., I want to cancel my order"
 )
 
-X_vec = vectorizer.fit_transform(X)
+if st.button("Predict Intent"):
+    if user_input.strip() == "":
+        st.warning("Please enter a message.")
+    else:
+        cleaned = clean_text(user_input)
+        vec = vectorizer.transform([cleaned])
+        pred = model.predict(vec)
+        st.success(f"✅ Predicted Intent: **{pred[0]}**")
 
-model = LogisticRegression(max_iter=1000)
-model.fit(X_vec, y)
+# ----------------------------------------
+# MODEL EVALUATION
+# ----------------------------------------
+st.subheader("🔹 Model Evaluation")
 
-# -------------------------------
-# SAVE MODEL & VECTORIZER
-# -------------------------------
-with open("nlu_intent_model.pkl", "wb") as f:
-    pickle.dump(model, f)
+if st.button("Run Evaluation"):
+    X_vec = vectorizer.transform(df['clean_utterance'])
+    y_pred = model.predict(X_vec)
 
-with open("tfidf_vectorizer.pkl", "wb") as f:
-    pickle.dump(vectorizer, f)
+    acc = accuracy_score(df['intent'], y_pred)
+    report = classification_report(df['intent'], y_pred)
 
-print("✅ Model and vectorizer saved successfully!")
+    st.write(f"### 📊 Accuracy: `{acc:.4f}`")
+    st.text(report)
+
+    with open("final_bottrainer_report.txt", "w") as f:
+        f.write("BotTrainer – NLU Model Evaluation Report\n\n")
+        f.write(f"Accuracy: {acc:.4f}\n\n")
+        f.write(report)
+
+    st.success("📄 Final evaluation report generated successfully!")
+
 
 
 
