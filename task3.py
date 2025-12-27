@@ -1,33 +1,14 @@
-import streamlit as st
 import pandas as pd
 import re
-import os
 import pickle
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
 
-# ----------------------------------------
-# PAGE CONFIG
-# ----------------------------------------
-st.set_page_config(page_title="BotTrainer NLU", layout="centered")
-
-# ----------------------------------------
-# FILE PATHS (RELATIVE)
-# ----------------------------------------
+# -------------------------------
+# LOAD DATASET
+# -------------------------------
 DATASET_PATH = "Bitext_Sample_Customer_Service_Training_Dataset.xlsx"
-MODEL_PATH = "nlu_intent_model.pkl"
-VECTORIZER_PATH = "tfidf_vectorizer.pkl"
-
-# ----------------------------------------
-# CHECK FILES
-# ----------------------------------------
-for file in [DATASET_PATH, MODEL_PATH, VECTORIZER_PATH]:
-    if not os.path.exists(file):
-        st.error(f"❌ Missing file: {file}")
-        st.stop()
-
-# ----------------------------------------
-# LOAD DATA
-# ----------------------------------------
 df = pd.read_excel(DATASET_PATH)
 df = df[['utterance', 'intent']]
 
@@ -39,60 +20,33 @@ def clean_text(text):
 
 df['clean_utterance'] = df['utterance'].apply(clean_text)
 
-# ----------------------------------------
-# LOAD MODEL & VECTORIZER (pickle)
-# ----------------------------------------
-with open(MODEL_PATH, "rb") as f:
-    model = pickle.load(f)
+X = df['clean_utterance']
+y = df['intent']
 
-with open(VECTORIZER_PATH, "rb") as f:
-    vectorizer = pickle.load(f)
-
-# ----------------------------------------
-# UI
-# ----------------------------------------
-st.title("🤖 BotTrainer – NLU Model Trainer & Evaluator")
-st.write("Predict chatbot intents and evaluate model performance.")
-
-# ----------------------------------------
-# PREDICTION
-# ----------------------------------------
-st.subheader("🔹 Intent Prediction")
-
-user_input = st.text_area(
-    "Enter a customer message:",
-    placeholder="e.g., I want to cancel my order"
+# -------------------------------
+# TRAIN MODEL
+# -------------------------------
+vectorizer = TfidfVectorizer(
+    ngram_range=(1, 2),
+    max_features=5000,
+    stop_words="english"
 )
 
-if st.button("Predict Intent"):
-    if user_input.strip() == "":
-        st.warning("Please enter a message.")
-    else:
-        cleaned = clean_text(user_input)
-        vec = vectorizer.transform([cleaned])
-        pred = model.predict(vec)
-        st.success(f"✅ Predicted Intent: **{pred[0]}**")
+X_vec = vectorizer.fit_transform(X)
 
-# ----------------------------------------
-# EVALUATION
-# ----------------------------------------
-st.subheader("🔹 Model Evaluation")
+model = LogisticRegression(max_iter=1000)
+model.fit(X_vec, y)
 
-if st.button("Run Evaluation"):
-    X_vec = vectorizer.transform(df['clean_utterance'])
-    y_pred = model.predict(X_vec)
+# -------------------------------
+# SAVE MODEL & VECTORIZER
+# -------------------------------
+with open("nlu_intent_model.pkl", "wb") as f:
+    pickle.dump(model, f)
 
-    acc = accuracy_score(df['intent'], y_pred)
-    report = classification_report(df['intent'], y_pred)
+with open("tfidf_vectorizer.pkl", "wb") as f:
+    pickle.dump(vectorizer, f)
 
-    st.write(f"### 📊 Accuracy: `{acc:.4f}`")
-    st.text(report)
+print("✅ Model and vectorizer saved successfully!")
 
-    with open("final_bottrainer_report.txt", "w") as f:
-        f.write("BotTrainer – NLU Model Evaluation Report\n\n")
-        f.write(f"Accuracy: {acc:.4f}\n\n")
-        f.write(report)
-
-    st.success("📄 Report generated successfully!")
 
 
